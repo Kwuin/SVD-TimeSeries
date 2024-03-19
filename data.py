@@ -93,6 +93,9 @@ class Distribution:
         return self
 
     def sample(self, n_samples=1, eps=None, exponential=False, gaussian=False):
+        """
+        n_samples =
+        """
         sample = Distribution()
         sample.n = self.n
         sample.t_len = self.t_len
