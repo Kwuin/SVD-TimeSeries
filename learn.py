@@ -435,3 +435,77 @@ def em_learn(
     if write_stats:
         stats["n_iter"] = n_iter
     return Mixture.from_flat(flat_mixture, n)
+
+
+def count_3_from_seq(seq, n):
+    """
+    seq: discretized sequence
+    n: number of categories
+    """
+    all_trail_probs = np.zeros((n, n, n))
+    for i in range(len(seq) // 3):
+        x = seq[3 * i : 3 * (i + 1)]
+        all_trail_probs[tuple(x)] += 1
+    # num_visited[x] += 1
+    return Distribution.from_all_trail_probs(all_trail_probs / np.sum(all_trail_probs))
+
+
+def learn_mix_from_seq(seq, learner, n, L):
+    """
+    seq: discretized time series: an 1-d array
+    learner:
+    """
+    trail_empirical_distribution = count_3_from_seq(seq, n)
+    if (
+        np.isnan(trail_empirical_distribution.all_trail_probs()).any()
+        or np.isinf(trail_empirical_distribution.all_trail_probs()).any()
+    ):
+        print("Inf or NAN values")
+        print(trail_empirical_distribution.all_trail_probs())
+
+    return learners[learner](trail_empirical_distribution, n, L)
+
+
+def likelihood(mixture, trails, counts=None, log=False):
+    if counts is None:
+        counts = transitions(mixture.n, trails)
+    logS = np.log(mixture.S + 1e-10)
+    logTs = np.log(mixture.Ms + 1e-10)
+
+    logl = logS[:, trails[:, 0]]
+    logl += np.sum(
+        logTs[:, :, :, None] * np.moveaxis(counts, 0, 2)[None, :, :, :], axis=(1, 2)
+    )
+    if log:
+        return logl
+    probs = np.exp(logl - np.max(logl, axis=0))
+    probs /= np.sum(probs, axis=0)[None, :]
+    return probs
+
+
+def transitions(n, trails):
+    n_samples = trails.shape[0]
+    c = np.zeros([n_samples, n, n], dtype=int)
+    for t, trail in enumerate(trails):
+        i = trail[0]
+        for j in trail[1:]:
+            c[t, i, j] += 1
+            i = j
+    return c
+
+    
+learners = {
+    "CA-SVD": svd_learn_new,
+    "CA-SVD'": lambda d, n, L: svd_learn_new(d, n, L, sample_dist=0.01),
+    "GKV-SVD": svd_learn,
+    "EM2": lambda d, n, L: em_learn(d, n, L, max_iter=2),
+    "EM5": lambda d, n, L: em_learn(d, n, L, max_iter=5),
+    "EM20": lambda d, n, L: em_learn(d, n, L, max_iter=20),
+    "EM50": lambda d, n, L: em_learn(d, n, L, max_iter=50),
+    "EM100": lambda d, n, L: em_learn(d, n, L, max_iter=100),
+    "EM-converge": em_learn,
+    "CA-SVD-EM2": lambda d, n, L: svd_learn_new(d, n, L, em_refine_max_iter=2),
+    "CA-SVD-EM5": lambda d, n, L: svd_learn_new(d, n, L, em_refine_max_iter=5),
+    "CA-SVD-EM20": lambda d, n, L: svd_learn_new(d, n, L, em_refine_max_iter=20),
+    "CA-SVD-EM100": lambda d, n, L: svd_learn_new(d, n, L, em_refine_max_iter=100),
+}
